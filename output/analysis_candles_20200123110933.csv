@@ -1,0 +1,7 @@
+instrument,total_open,total_closed,total_won,total_lost,win_streak,lose_streak,pnl_net,strike_rate
+EUR_USD,0,22,8,14,2,4,-5984.15,0.364
+GBP_USD,0,21,13,8,10,4,5045.75,0.619
+AUD_USD,1,28,12,16,4,4,-3508.77,0.429
+NZD_USD,1,30,20,10,10,3,10316.83,0.667
+XAU_USD,0,30,17,13,4,2,4008.2,0.567
+XAG_USD,0,30,13,17,2,5,-3818.95,0.433

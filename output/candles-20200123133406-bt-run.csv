@@ -1,0 +1,2 @@
+instrument,datetime,open,high,low,close,volume,long_signal,short_signal,bollinger inner,bollinger outer,ichimoku,stdev,CDLENGULFING,CDLEVENINGSTAR,CDLHAMMER,CDLMORNINGSTAR,CDLSHOOTINGSTAR
+NZD_USD, 2017-01-19 18:00:00, 0.71639, 0.7191, 0.7157, 0.7189399999999999, 4671.0, False, False, 0.71645, 0.71645, 0.71625, 0.00376, 100.0, 0.0, 0.0, 0.0, 0.0
