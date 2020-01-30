@@ -38,10 +38,12 @@ class MyStrategy(GenericStrategy):
             self.indicators[d]['macd_signal'] = self.indicators[d]['macd'].signal
             self.indicators[d]['macd_histogram'] = self.indicators[d]['macd'].histo
 
-            self.indicators[d]['mcd_line_zero_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].macd, 0)
-            self.indicators[d]['mcd_signal_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].macd,
+            self.indicators[d]['macd_line_zero_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].macd, 0)
+
+            self.indicators[d]['macd_signal_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].macd,
                                                                                  self.indicators[d]['macd'].signal)
-            self.indicators[d]['mcd_histo_zero_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].histo,
+
+            self.indicators[d]['macd_histo_zero_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].histo,
                                                                                      0)
 
             self.add_candles_indicators(d)
@@ -71,8 +73,9 @@ class MyStrategy(GenericStrategy):
         hammer = indicators['CDLHAMMER']
         shooting_star = indicators['CDLSHOOTINGSTAR']
         ichimoku = indicators['ichimoku']
-        mcd_line_zero_crossover = indicators['mcd_line_zero_crossover']
-        mcd_signal_crossover = indicators['mcd_signal_crossover']
+        macd_line_zero_crossover = indicators['macd_line_zero_crossover']
+        macd_signal_crossover = indicators['macd_signal_crossover']
+        macd_histogram_crossover = indicators['macd_histogram_crossover']
 
         above_cloud = d[0] > ichimoku.senkou_span_a[0] and d[0] > ichimoku.senkou_span_b[0]
         below_cloud = d[0] < ichimoku.senkou_span_a[0] and d[0] < ichimoku.senkou_span_b[0]
@@ -83,8 +86,10 @@ class MyStrategy(GenericStrategy):
         # self.long_signal = any_bull_candles_pattern and not any_bear_candles_pattern and above_cloud
         # self.short_signal = any_bear_candles_pattern and not any_bull_candles_pattern and below_cloud
 
-        self.long_signal = (mcd_line_zero_crossover == 1 or mcd_signal_crossover == 1)
-        self.short_signal = (mcd_line_zero_crossover == -1 or mcd_signal_crossover == -1)
+        self.long_signal = (macd_line_zero_crossover == 1 or macd_signal_crossover == 1 or macd_histogram_crossover == 1)
+        self.short_signal = (
+                    macd_line_zero_crossover == -1 or macd_signal_crossover == -1 or macd_histogram_crossover == -1)
+
         # current position size
         pos = self.getposition(d).size
         if not pos:

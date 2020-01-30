@@ -4,6 +4,7 @@ from __future__ import (absolute_import, division, print_function,
 import datetime
 
 import backtrader as bt
+from math import floor
 
 
 class GenericStrategy(bt.Strategy):
@@ -184,16 +185,27 @@ class GenericStrategy(bt.Strategy):
         if method == 1:
             # pip_value = pip_value * price
             units = pip_value / multiplier
-            return units
 
         elif method == 2:
             pip_value = pip_value * exchange_rate
             units = pip_value / multiplier
-            return units
 
         else:  # is method 0
             units = pip_value / multiplier
-            return units
+
+        # check if trade is possible with current account/leverage to prevent rejection from broker
+        final_units = self.max_trade(units, price)
+        return final_units
+
+    def max_trade(self, quantity, entry_price):
+        acc_value = self.broker.getvalue()
+        leverage = self.broker.comminfo[None].params.leverage
+        commission = self.broker.comminfo[None].params.leverage
+        if quantity * entry_price < acc_value * leverage:
+            return quantity
+        reduced_quantity = acc_value / ((1 + commission) * entry_price)
+        print(f'quantity reduced from {quantity} to {reduced_quantity}')
+        return floor(reduced_quantity)
 
     def add_candles_indicators(self, d, candle_list=None):
         if candle_list is None:
@@ -204,5 +216,3 @@ class GenericStrategy(bt.Strategy):
             self.indicators[d][cdl_method].plotinfo.plot = True
             self.indicators[d][cdl_method].plotinfo.subplot = True
             self.indicators[d][cdl_method].csv = True
-
-

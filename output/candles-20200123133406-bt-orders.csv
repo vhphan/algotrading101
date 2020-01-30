@@ -1,8 +1,0 @@
-instrument,datetime,buy/sell,status,size,order ref
-NZD_USD, 2017-01-19 22:00:00, Buy, Submitted, 88759.2067072801, 1
-NZD_USD, 2017-01-19 22:00:00, Sell, Submitted, -88759.2067072801, 2
-NZD_USD, 2017-01-19 22:00:00, Sell, Submitted, -88759.2067072801, 3
-NZD_USD, 2017-01-19 22:00:00, Buy, Accepted, 88759.2067072801, 1
-NZD_USD, 2017-01-19 22:00:00, Sell, Accepted, -88759.2067072801, 2
-NZD_USD, 2017-01-19 22:00:00, Sell, Accepted, -88759.2067072801, 3
-NZD_USD, 2017-01-19 22:00:00, Buy, Completed, 88759.2067072801, 1

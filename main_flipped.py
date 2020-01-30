@@ -47,12 +47,14 @@ def parse_args():
     parser.add_argument('--cash', default=100_000, type=int,
                         help='Starting Cash')
 
-    parser.add_argument('--leverage', default=100_000, type=int,
+    parser.add_argument('--leverage', default=50, type=int,
                         help='Leverage')
 
-    # parser.add_argument('--comm', default=2, type=float,
-    #                     help='Commission for operation')
-    #
+    # Set the commission - 0.1% ... divide by 100 to remove the % ... 0.001
+    # forex, set to zero
+    parser.add_argument('--commission', default=0.00, type=float,
+                        help='Commission for operation')
+
     # parser.add_argument('--mult', default=10, type=int,
     #                     help='Multiplier for futures')
     #
@@ -111,8 +113,8 @@ def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=Fa
     # Add a strategy
     cerebro.addstrategy(strategy, only_long=args.only_long)
 
-    # Set the commission - 0.1% ... divide by 100 to remove the %
-    cerebro.broker.setcommission(commission=0.00, leverage=args.leverage)
+    cerebro.broker.setcommission(commission=args.commission, leverage=args.leverage)
+    # cerebro.broker.setcommission(commission=0, leverage=args.leverage)
 
     # Add a FixedSize sizer according to the stake
     # cerebro.addsizer(bt.sizers.FixedSize, stake=10)
@@ -189,8 +191,8 @@ if __name__ == '__main__':
     args = parse_args()
     # get_instruments()
     session_id = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%H%M%S')
-    # instruments = ['EUR_USD', 'GBP_USD', 'AUD_USD', 'NZD_USD', 'XAU_USD', 'XAG_USD']
-    instruments = ['NZD_USD']
+    instruments = ['EUR_USD', 'GBP_USD', 'AUD_USD', 'NZD_USD', 'XAU_USD', 'XAG_USD']
+    # instruments = ['EUR_USD']
 
     strategy_module_name = 'candles_flipped'
     strategy_module = importlib.import_module(strategy_module_name)
