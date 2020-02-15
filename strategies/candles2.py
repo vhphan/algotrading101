@@ -10,19 +10,29 @@ class MyStrategy(GenericStrategy):
 
     def __init__(self, **kwargs):
         super().__init__()
+        self.taken_first_profit = dict()
 
         for k, v in kwargs.items():
             self.__setattr__(k, v)
 
         add_header = []
         self.params.dev_multiplier = 3
+
         for i, d in enumerate(self.datas):
             self.order_refs[d._name] = []
+
+            self.stop_loss[d] = None
+            self.take_profit[d] = None
+            self.taken_first_profit[d] = None
+
             self.indicators[d] = dict()
             self.indicators[d]['bollinger inner'] = bt.indicators.BollingerBands(devfactor=1)
             self.indicators[d]['bollinger outer'] = bt.indicators.BollingerBands(devfactor=2)
             self.indicators[d]['ichimoku'] = bt.indicators.Ichimoku()
             self.indicators[d]['stdev'] = bt.indicators.StandardDeviation(period=self.p.window_s)
+            self.indicators[d]['slope'] = slope.Slope(period=self.p.window_l)
+            self.indicators[d]['rsi'] = bt.indicators.RelativeStrengthIndex()
+
             self.indicators[d]['ichimoku'].plotinfo.plot = False
             self.indicators[d]['stdev'].plotinfo.plot = False
             self.indicators[d]['bollinger inner'].plotinfo.plot = False
@@ -57,7 +67,8 @@ class MyStrategy(GenericStrategy):
         hammer = indicators['CDLHAMMER']
         shooting_star = indicators['CDLSHOOTINGSTAR']
         ichimoku = indicators['ichimoku']
-
+        slope = indicators['slope']
+        rsi = indicators['rsi']
 
         above_cloud = d[0] > ichimoku.senkou_span_a[0] and d[0] > ichimoku.senkou_span_b[0]
         below_cloud = d[0] < ichimoku.senkou_span_a[0] and d[0] < ichimoku.senkou_span_b[0]
@@ -78,69 +89,69 @@ class MyStrategy(GenericStrategy):
             if self.long_signal:
                 self.long_action(d, dn, indicators)
 
-            if self.short_signal and not self.only_long:
-                self.short_action(d, dn, indicators)
+            # if self.short_signal and not self.only_long:
+            #     self.short_action(d, dn, indicators)
         else:
-            print('current pos:', pos)
+            if pos > 0:  # currently long
+
+                # strategy 1
+                if d[0] >= self.take_profit[d] or d[0] <= self.stop_loss[d]:
+                    self.close(d)
+                    self.stop_loss[d] = None
+                    self.take_profit[d] = None
+                else:
+                    pass
+                    # stop_loss_new = d[0] - indicators['stdev'][0] * self.params.dev_multiplier
+                    # self.stop_loss[d] = max(self.stop_loss[d], stop_loss_new)
+
+                # strategy 2
+                # if d[0] >= self.take_profit[d] and slope > 0:
+                #     self.close(d, size=pos // 2)
+                #     self.take_profit[d] = d[0] + 2 * indicators['stdev'][0] * self.params.dev_multiplier
+                #
+                # elif d[0] >= self.take_profit[d] or d[0] <= self.stop_loss[d]:
+                #     self.close(d)
+                #     self.stop_loss[d] = None
+                #     self.take_profit[d] = None
+                #
+                # else:
+                #     if slope > 0:
+                #         stop_loss_new = d[0] - indicators['stdev'][0] * self.params.dev_multiplier
+                #         self.stop_loss[d] = max(self.stop_loss[d], stop_loss_new)
+
+    def is_uptrend(self, d, dn, indicators):
+        pass
 
     def short_action(self, d, dn, indicators):
-        entry_price = d[0]
-        stop_price = entry_price + indicators['stdev'][0] * self.params.dev_multiplier
-        take_profit_price = entry_price - 1 * indicators['stdev'][0] * self.params.dev_multiplier
+        self.entry_price[d] = d[0]
+        self.stop_loss[d] = d[0] + indicators['stdev'][0] * self.params.dev_multiplier
+        self.take_profit[d] = d[0] - 2 * indicators['stdev'][0] * self.params.dev_multiplier
 
-        qty = self.size_position(price=entry_price, stop=stop_price, risk=self.params.risk)
+        qty = self.size_position(price=self.entry_price[d], stop=self.stop_loss[d], risk=self.params.risk)
 
-        valid_entry = d.datetime.datetime(0) + datetime.timedelta(hours=self.valid_hours)
-        valid_limit = valid_stop = datetime.timedelta(1000000)
-        # entry_stop_delta = abs(entry_price - stop_price)
-
-        self.sell_order[dn] = self.sell_bracket(data=d, limitprice=take_profit_price,
-                                                limitargs=dict(valid=valid_limit),
-                                                stopprice=stop_price, stopargs=dict(valid=valid_stop),
-                                                exectype=bt.Order.Market, size=qty, price=entry_price,
-                                                valid=valid_entry)
-
-        # self.sell_order[dn] = self.sell_bracket(data=d, limitprice=take_profit_price,
-        #                                         limitargs=dict(valid=valid_limit),
-        #                                         stopargs=dict(valid=valid_stop),
-        #                                         exectype=bt.Order.StopTrail, size=qty, price=entry_price,
-        #                                         valid=valid_entry, trailamount=entry_stop_delta)
-
-        self.order_refs[dn] = [o.ref for o in self.sell_order[dn]]
-        self.log('SHORT SELL CREATE, %.2f' % d.close[0])
-        self.log(f'SELL QUANTITY = {qty}')
-        self.log(f'ENTRY PRICE = {entry_price}')
-        self.log(f'SL PRICE = {stop_price}')
-        self.log(f'TP PRICE = {take_profit_price}')
+        self.sell_order[dn] = self.sell(data=d, exectype=bt.Order.Market, size=qty)
+        # self.order_refs[dn] = [o.ref for o in self.buy_order[dn]]
+        self.order_refs[dn] = [self.buy_order[dn].ref]
+        self.log('BUY CREATE, %.2f' % d.close[0])
+        self.log(f'BUY QUANTITY = {qty}')
+        self.log(f'ENTRY PRICE = {self.entry_price[d]}')
+        self.log(f'SL PRICE = {self.stop_loss[d]}')
+        self.log(f'TP PRICE = {self.take_profit[d]}')
         self.log(f'CURRENT PRICE = {d[0]}')
 
     def long_action(self, d, dn, indicators):
-        entry_price = d[0]
-        stop_price = d[0] - indicators['stdev'][0] * self.params.dev_multiplier
-        take_profit_price = d[0] + 2 * indicators['stdev'][0] * self.params.dev_multiplier
+        self.entry_price[d] = d[0]
+        self.stop_loss[d] = d[0] - indicators['stdev'][0] * self.params.dev_multiplier
+        self.take_profit[d] = d[0] + 2 * indicators['stdev'][0] * self.params.dev_multiplier
 
-        qty = self.size_position(price=entry_price, stop=stop_price, risk=self.params.risk)
+        qty = self.size_position(price=self.entry_price[d], stop=self.stop_loss[d], risk=self.params.risk)
 
-        valid_entry = d.datetime.datetime(0) + datetime.timedelta(hours=self.valid_hours)
-        valid_limit = valid_stop = datetime.timedelta(1_000_000)
-        entry_stop_delta = abs(entry_price - stop_price)
-
-        # self.buy_order[dn] = self.buy_bracket(data=d, limitprice=take_profit_price,
-        #                                       limitargs=dict(valid=valid_limit),
-        #                                       stopprice=stop_price, stopargs=dict(valid=valid_stop),
-        #                                       exectype=bt.Order.Market, size=qty, price=entry_price,
-        #                                       valid=valid_entry,)
-
-        self.buy_order[dn] = self.buy_bracket(data=d, limitprice=take_profit_price,
-                                              limitargs=dict(valid=valid_limit),
-                                              stopargs=dict(valid=valid_stop),
-                                              exectype=bt.Order.StopTrail, size=qty, price=entry_price,
-                                              valid=valid_entry, trailamount=entry_stop_delta)
-
-        self.order_refs[dn] = [o.ref for o in self.buy_order[dn]]
+        self.buy_order[dn] = self.buy(data=d, exectype=bt.Order.Market, size=qty)
+        # self.order_refs[dn] = [o.ref for o in self.buy_order[dn]]
+        self.order_refs[dn] = [self.buy_order[dn].ref]
         self.log('BUY CREATE, %.2f' % d.close[0])
         self.log(f'BUY QUANTITY = {qty}')
-        self.log(f'ENTRY PRICE = {entry_price}')
-        self.log(f'SL PRICE = {stop_price}')
-        self.log(f'TP PRICE = {take_profit_price}')
+        self.log(f'ENTRY PRICE = {self.entry_price[d]}')
+        self.log(f'SL PRICE = {self.stop_loss[d]}')
+        self.log(f'TP PRICE = {self.take_profit[d]}')
         self.log(f'CURRENT PRICE = {d[0]}')

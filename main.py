@@ -13,11 +13,8 @@ import random
 import backtrader as bt
 import matplotlib.pyplot as plt
 
-from helpers_functions import print_trade_analysis, print_dict, print_sharpe_ratio, print_sqn, save_trade_analysis
+from helpers_functions import print_dict, save_trade_analysis, save_analyzers, save_analyzers_excel
 from oanda_functions import get_historical_data_factory
-
-
-# from strategies import candles, candles_mcd, simple_bollinger
 
 
 def parse_args():
@@ -28,7 +25,7 @@ def parse_args():
                         help='Starting date in YYYY-MM-DD format')
 
     parser.add_argument('--to_date', '-t',
-                        default='2018-01-01',
+                        default='2017-12-31',
                         help='Starting date in YYYY-MM-DD format')
 
     parser.add_argument('--granularity', default='H4', type=str,
@@ -43,8 +40,8 @@ def parse_args():
     parser.add_argument('--show_plot', '-sp', default=True, action='store_true',
                         help='show plot')
 
-    parser.add_argument('--different_account', '-da', action='store_true',
-                        help='Use the same account for all instrument.')
+    parser.add_argument('--same_account', '-da', default=False, action='store_false',
+                        help='Use the same account for all instrument. Otherwise different account for each instrument')
 
     parser.add_argument('--cash', default=100_000, type=int,
                         help='Starting Cash')
@@ -72,7 +69,7 @@ def parse_args():
     # parser.add_argument('--numfigs', '-n', default=1,
     #                     help='Plot using numfigs figures')
 
-    return parser.parse_args()
+    return parser.parse_args(args=[])
 
 
 def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=False):
@@ -129,21 +126,40 @@ def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=Fa
     cerebro.addanalyzer(bt.analyzers.SQN, _name="sqn")
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe")
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="draw_down")
+    cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
 
     # Run over everything
     strategies = cerebro.run()
     first_strategy = strategies[0]
 
     # print the analyzers
-    try:
-        print_trade_analysis(first_strategy.analyzers.ta.get_analysis())
-        save_trade_analysis(first_strategy.analyzers.ta.get_analysis(), instrument,
-                            f'output/analysis_{strategy.__module__}_{session_id}.csv')
-        print_sharpe_ratio(first_strategy.analyzers.sharpe.get_analysis())
-        print_sqn(first_strategy.analyzers.sqn.get_analysis())
-        print_dict(first_strategy.analyzers.draw_down.get_analysis())
-    except Exception as e:
-        print(e)
+    for analyzer in first_strategy.analyzers:
+        if type(analyzer).__name__ != 'PyFolio':
+            analyzer.print()
+
+    #
+    # first_strategy.analyzers.ta.get_analysis()
+    save_trade_analysis(first_strategy.analyzers.ta.get_analysis(), instrument_list,
+                        f'output/analysis_{strategy.__module__}_{session_id}.csv')
+
+    save_analyzers(first_strategy, instrument, f'output/analyzers_result_{strategy.__module__}_{session_id}.csv')
+
+    # save_analyzers_excel(first_strategy, instrument, f'output/analyzers_result_{strategy.__module__}_{session_id}.xlsx')
+
+    print_dict(first_strategy.analyzers.draw_down.get_analysis())
+
+    # try:
+
+    #     print_trade_analysis(first_strategy.analyzers.ta.get_analysis())
+    #     save_trade_analysis(first_strategy.analyzers.ta.get_analysis(), instrument,
+    #                         f'output/analysis_{strategy.__module__}_{session_id}.csv')
+
+    #     print_sharpe_ratio(first_strategy.analyzers.sharpe.get_analysis())
+    #     print_sqn(first_strategy.analyzers.sqn.get_analysis())
+    #     print_dict(first_strategy.analyzers.draw_down.get_analysis())
+
+    # except Exception as e:
+    #     print(e)
 
     # Get final portfolio Value
     portfolio_value = cerebro.broker.getvalue()
@@ -175,16 +191,20 @@ def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=Fa
 
     # save_plots(figs, instrument, strategy, timestamp)
 
-    #  separate plot by data feed. (if there is more than one)
+    #  separate plot by data feed. (if there is more than one i.e. multiple data feeds)
     if show_plot:
         if len(first_strategy.datas) > 1:
             for i in range(len(first_strategy.datas)):
                 for j, d in enumerate(first_strategy.datas):
                     d.plotinfo.plot = i == j  # only one data feed to be plot. others = False
                     # first_strategy.observers.buysell[j].plotinfo.plot = i == j
-                cerebro.plot(**plot_args)
+                # cerebro.plot(**plot_args)
+                figure = cerebro.plot(**plot_args)[0][0]
+                figure.savefig(f'output/{strategy.__module__}_{session_id}.png', dpi=300, figsize=(10, 5))
         else:
-            cerebro.plot(**plot_args)
+            # cerebro.plot(**plot_args)
+            figure = cerebro.plot(**plot_args)[0][0]
+            figure.savefig(f'output/{strategy.__module__}_{session_id}.png', dpi=300, figsize=(10, 5))
 
 
 if __name__ == '__main__':
@@ -194,15 +214,18 @@ if __name__ == '__main__':
     # get_instruments()
     session_id = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%H%M%S')
     instruments = ['EUR_USD', 'GBP_USD', 'AUD_USD', 'NZD_USD', 'XAU_USD', 'XAG_USD']
-    # instruments = ['EUR_USD']
+    # instruments = ['EUR_USD', 'GBP_USD']
 
-    strategy_module_name = 'candles'
+    strategy_module_name = 'candles2'
     strategy_module = importlib.import_module(strategy_module_name)
 
-    if args.different_account:
+    same_account = args.same_account
+    # same_account = False
+
+    if same_account:
         # run all instruments at the same time with the same account
-        start_backtest(strategy_module.MyStrategy, instruments)
+        start_backtest(strategy_module.MyStrategy, instruments, show_plot=True)
     else:
         # run each instrument independently starting with a new account each
         for instrument in instruments:
-            start_backtest(strategy_module.MyStrategy, [instrument], session_id=session_id, show_plot=False)
+            start_backtest(strategy_module.MyStrategy, [instrument], session_id=session_id, show_plot=True)

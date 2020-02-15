@@ -41,12 +41,12 @@ class MyStrategy(GenericStrategy):
             self.indicators[d]['macd_line_zero_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].macd, 0)
 
             self.indicators[d]['macd_signal_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].macd,
-                                                                                 self.indicators[d]['macd'].signal)
+                                                                                  self.indicators[d]['macd'].signal)
 
             self.indicators[d]['macd_histo_zero_crossover'] = bt.indicators.CrossOver(self.indicators[d]['macd'].histo,
-                                                                                     0)
+                                                                                      0)
 
-            self.add_candles_indicators(d)
+            self.add_candles_indicators(d, candle_list=['CDLENGULFING', 'CDLMORNINGSTAR', 'CDLEVENINGSTAR', 'CDLHAMMER', 'CDLSHOOTINGSTAR'])
 
             if i == 0:
                 for key in self.indicators[d]:
@@ -86,9 +86,10 @@ class MyStrategy(GenericStrategy):
         # self.long_signal = any_bull_candles_pattern and not any_bear_candles_pattern and above_cloud
         # self.short_signal = any_bear_candles_pattern and not any_bull_candles_pattern and below_cloud
 
-        self.long_signal = (macd_line_zero_crossover == 1 or macd_signal_crossover == 1 or macd_histogram_crossover == 1)
+        self.long_signal = (
+                    macd_line_zero_crossover == 1 or macd_signal_crossover == 1 or macd_histogram_crossover == 1)
         self.short_signal = (
-                    macd_line_zero_crossover == -1 or macd_signal_crossover == -1 or macd_histogram_crossover == -1)
+                macd_line_zero_crossover == -1 or macd_signal_crossover == -1 or macd_histogram_crossover == -1)
 
         # current position size
         pos = self.getposition(d).size

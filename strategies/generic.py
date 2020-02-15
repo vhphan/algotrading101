@@ -15,14 +15,18 @@ class GenericStrategy(bt.Strategy):
         timestamp = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%H%M%S')
         cn = self.__class__.__module__
 
-        self.csv_file = f'output/{cn}-{timestamp}-bt-run.csv'
-        self.csv_file_orders = f'output/{cn}-{timestamp}-bt-orders.csv'
+        asset_name = self.data0._name
+        self.csv_file = f'output/{cn}-{timestamp}-{asset_name}-bt-run.csv'
+        self.csv_file_orders = f'output/{cn}-{timestamp}-{asset_name}-bt-orders.csv'
 
         # To keep track of pending orders and buy price/commission
         self.order_refs = dict()
         self.buy_order = dict()
         self.sell_order = dict()
         self.indicators = dict()
+        self.entry_price = dict()
+        self.stop_loss = dict()
+        self.take_profit = dict()
         self.long_signal = False
         self.short_signal = False
 
@@ -70,11 +74,9 @@ class GenericStrategy(bt.Strategy):
 
     def log(self, txt, dt=None):
         """ Logging function fot this strategy"""
-        dt = dt or self.datas[0].datetime.date(0)
-        dt1 = self.data0.datetime.time(0)
-
-        # print('%s, %s' % (dt.isoformat(), txt))
-        print('%s,%s, %s' % (dt.isoformat(), dt1.isoformat(), txt))
+        dt = dt or self.datas[0].datetime.date(0).isoformat()
+        dt1 = self.data0.datetime.time(0).isoformat()
+        print(f'{dt}, {dt1}, {txt}')
 
     def setup_csv_files(self, add_header=None):
         """
@@ -92,7 +94,7 @@ class GenericStrategy(bt.Strategy):
         with open(self.csv_file, 'w') as file:
             file.write(','.join(header) + "\n")
 
-        header_order = ['instrument', 'datetime', 'buy/sell', 'status', 'size', 'order ref']
+        header_order = ['instrument', 'datetime', 'buy/sell', 'status', 'size', 'order ref', 'executed price']
         with open(self.csv_file_orders, 'w') as file:
             file.write(','.join(header_order) + "\n")
 
@@ -100,38 +102,35 @@ class GenericStrategy(bt.Strategy):
 
         buy_or_sell = 'Buy' * order.isbuy() or 'Sell'
 
-        dt, dn = self.datetime.datetime(0), order.data._name
-        print('{} {} Order {} {} Status {}'.format(
-            dt, dn, order.ref, buy_or_sell, order.getstatusname())
-        )
+        dt, dn = self.datetime.datetime(0).isoformat(), order.data._name
+
+        self.log(f'{dn}, {order.ref}, {buy_or_sell}, {order.getstatusname()}')
+
+        if order.status == order.Completed:
+            price_info = order.executed.price
+            self.log(f'order completed, executed price = {price_info}')
+        elif order.status == order.Submitted or order.status == order.Accepted:
+            price_info = order.price
+        else:
+            price_info = None
 
         with open(self.csv_file_orders, 'a+') as f:
-            log_order = f'{dn}, {dt}, {buy_or_sell}, {order.getstatusname()}, {order.size}, {order.ref}'
+            log_order = f'{dn}, {dt}, {buy_or_sell}, {order.getstatusname()}, {order.size}, {order.ref}, {price_info}'
             f.write(log_order + '\n')
 
         if not order.alive():
             for i, d in enumerate(self.datas):
                 if order.ref in self.order_refs[d._name]:
                     self.order_refs[d._name].remove(order.ref)
-
-        print('{}: Order ref: {} / Type {} / Status {} / Instrument {}'.format(
-            self.data.datetime.datetime(0),
-            order.ref, 'Buy' * order.isbuy() or 'Sell',
-            order.getstatusname(),
-            self.data._name))
-
-        if order.status == order.Completed:
-            print(f'order completed, executed price = {order.executed.price}')
+        order_type = 'Buy' * order.isbuy() or 'Sell'
+        self.log(
+            f'Order ref: {order.ref} / Type {order_type} / Status {order.getstatusname()} / Instrument {dn}')
 
     def notify_trade(self, trade):
         date = self.data.datetime.datetime()
         if trade.isclosed:
             print('-' * 32, ' NOTIFY TRADE ', '-' * 32)
-            print('{}, Entry Price: {}, Profit, Gross {}, Net {}'.format(
-                date,
-                trade.price,
-                round(trade.pnl, 2),
-                round(trade.pnlcomm, 2)))
+            self.log(f'Entry Price: {trade.price}, Profit, Gross {round(trade.pnl, 2)}, Net {round(trade.pnlcomm, 2)}')
             print('-' * 80)
 
     def stop(self):
@@ -209,10 +208,12 @@ class GenericStrategy(bt.Strategy):
 
     def add_candles_indicators(self, d, candle_list=None):
         if candle_list is None:
-            candle_list = ['CDLENGULFING', 'CDLMORNINGSTAR', 'CDLEVENINGSTAR', 'CDLHAMMER', 'CDLSHOOTINGSTAR']
-        cdl_methods = [m for m in dir(bt.talib) if 'CDL' in m and m in candle_list]
+            cdl_methods = [m for m in dir(bt.talib) if 'CDL' in m]
+        else:
+            cdl_methods = [m for m in dir(bt.talib) if 'CDL' in m and m in candle_list]
+
         for cdl_method in cdl_methods:
             self.indicators[d][cdl_method] = getattr(bt.talib, cdl_method)(d.open, d.high, d.low, d.close)
-            self.indicators[d][cdl_method].plotinfo.plot = True
+            self.indicators[d][cdl_method].plotinfo.plot = False
             self.indicators[d][cdl_method].plotinfo.subplot = True
             self.indicators[d][cdl_method].csv = True
