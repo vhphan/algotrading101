@@ -2,7 +2,8 @@
 <module type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
-      <sourceFolder url="file://$MODULE_DIR$/strategies" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/strategies_bt" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/brokers" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/data" />
     </content>
     <orderEntry type="inheritedJdk" />

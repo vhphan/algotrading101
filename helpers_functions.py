@@ -7,12 +7,57 @@ import os
 
 import backtrader as bt
 import pandas as pd
-import pyfolio as pf
-
 from functools import reduce
 
 
 # from benedict import benedict
+
+def clean_df_db_dups(df, tablename, engine, dup_cols=[],
+                     filter_continuous_col=None, filter_categorical_col=None):
+    """
+    credits to https://www.ryanbaumann.com/blog/2016/4/30/python-pandas-tosql-only-insert-new-rows
+
+    Remove rows from a dataframe that already exist in a database
+    Required:
+        df : dataframe to remove duplicate rows from
+        engine: SQLAlchemy engine object
+        tablename: tablename to check duplicates in
+        dup_cols: list or tuple of column names to check for duplicate row values
+    Optional:
+        filter_continuous_col: the name of the continuous data column for BETWEEEN min/max filter
+                               can be either a datetime, int, or float data type
+                               useful for restricting the database table size to check
+        filter_categorical_col : the name of the categorical data column for Where = value check
+                                 Creates an "IN ()" check on the unique values in this column
+    Returns
+        Unique list of values from dataframe compared to database table
+    """
+    args = 'SELECT %s FROM %s' % (', '.join(['"{0}"'.format(col) for col in dup_cols]), tablename)
+    args_contin_filter, args_cat_filter = None, None
+    if filter_continuous_col is not None:
+        if df[filter_continuous_col].dtype == 'datetime64[ns]':
+            args_contin_filter = """ "%s" BETWEEN Convert(datetime, '%s')
+                                          AND Convert(datetime, '%s')""" % (filter_continuous_col,
+                                                                            df[filter_continuous_col].min(),
+                                                                            df[filter_continuous_col].max())
+
+    if filter_categorical_col is not None:
+        args_cat_filter = ' "%s" in(%s)' % (filter_categorical_col,
+                                            ', '.join(["'{0}'".format(value) for value in
+                                                       df[filter_categorical_col].unique()]))
+
+    if args_contin_filter and args_cat_filter:
+        args += ' Where ' + args_contin_filter + ' AND' + args_cat_filter
+    elif args_contin_filter:
+        args += ' Where ' + args_contin_filter
+    elif args_cat_filter:
+        args += ' Where ' + args_cat_filter
+
+    df.drop_duplicates(dup_cols, keep='last', inplace=True)
+    df = pd.merge(df, pd.read_sql(args, engine), how='left', on=dup_cols, indicator=True)
+    df = df[df['_merge'] == 'left_only']
+    df.drop(['_merge'], axis=1, inplace=True)
+    return df
 
 
 def save_analyzers_excel(strategy, instrument, excel_file):
@@ -44,7 +89,8 @@ def save_analyzers(strategy, instrument, csv_file):
     for i, analyzer in enumerate(strategy.analyzers):
         analysis = dict()
         analysis[type(analyzer).__name__] = analyzer.get_analysis()
-        if type(analyzer).__name__ == 'PyFolio':
+
+        if type(analyzer).__name__ in ['PyFolio', 'Transactions', 'PositionsValue']:
             pass
             # returns, positions, transactions, gross_lev = analyzer.get_pf_items()
             # pf.create_full_tear_sheet(
@@ -74,10 +120,9 @@ def save_analyzers(strategy, instrument, csv_file):
 # code to convert ini_dict to flattened dictionary
 # default seperater '_'
 def flatten_dict(dd, separator='_', prefix=''):
-    return {prefix + separator + k if prefix else k: v
-            for kk, vv in dd.items()
-            for k, v in flatten_dict(vv, separator, kk).items()
-            } if isinstance(dd, dict) else {prefix: dd}
+    res = {prefix + separator + str(k) if prefix else k: v for kk, vv in dd.items() for k, v in
+           flatten_dict(vv, separator, kk).items()} if isinstance(dd, dict) else {prefix: dd}
+    return res
 
 
 def divide(n, d):
@@ -109,18 +154,29 @@ def my_position_size(cash, stop_price, entry_price, risk):
     return qty
 
 
-def save_trade_analysis(analyzer, instrument, csv_file):
-    avg_win_ = deep_get(analyzer, 'won.pnl.average', default=0)
-    avg_loss_ = deep_get(analyzer, 'lost.pnl.average', default=0)
-    total_open_ = deep_get(analyzer, 'total.open', default=0)
-    total_closed_ = deep_get(analyzer, 'total.closed', default=0)
-    total_won_ = deep_get(analyzer, 'won.total', default=0)
-    total_lost_ = deep_get(analyzer, 'lost.total', default=0)
-    win_streak_ = deep_get(analyzer, 'streak.won.longest', default=0)
-    lose_streak_ = deep_get(analyzer, 'streak.lost.longest', default=0)
-    pnl_net_total_ = deep_get(analyzer, 'pnl.net.total', default=0)
+def save_trade_analysis(analyzer, instrument, csv_file, start_value):
+    trade_analyzer = analyzer.ta.get_analysis()
+    drawdown_analyzer = analyzer.draw_down.get_analysis()
+    returns_analyzer = analyzer.returns.get_analysis()
 
+    avg_win_ = deep_get(trade_analyzer, 'won.pnl.average', default=0)
+    avg_loss_ = deep_get(trade_analyzer, 'lost.pnl.average', default=0)
+    total_open_ = deep_get(trade_analyzer, 'total.open', default=0)
+    total_closed_ = deep_get(trade_analyzer, 'total.closed', default=0)
+    total_won_ = deep_get(trade_analyzer, 'won.total', default=0)
+    total_lost_ = deep_get(trade_analyzer, 'lost.total', default=0)
+    win_streak_ = deep_get(trade_analyzer, 'streak.won.longest', default=0)
+    lose_streak_ = deep_get(trade_analyzer, 'streak.lost.longest', default=0)
+    pnl_net_total_ = deep_get(trade_analyzer, 'pnl.net.total', default=0)
     profit_ratio_ = round(divide(total_won_, total_lost_), 3)
+
+    # Winning %
+    winning_pct = 100 * round(divide(total_won_, total_closed_), 2)
+    # Average Win and Loss%
+    avg_win_pct = 100 * round(divide(avg_win_, start_value), 2)
+    avg_loss_pct = 100 * round(divide(avg_loss_, start_value), 2)
+    biggest_win_pct = 100 * round(divide(deep_get(trade_analyzer, 'won.pnl.max', default=0), start_value), 2)
+    biggest_loss_pct = 100 * round(divide(deep_get(trade_analyzer, 'lost.pnl.max', default=0), start_value), 2)
 
     results = dict(
         instrument=instrument,
@@ -136,7 +192,12 @@ def save_trade_analysis(analyzer, instrument, csv_file):
         avg_loss=avg_loss_,
         profit_ratio=profit_ratio_,
         # expectancy=(1 + divide(avg_win_, abs(avg_loss_))) * profit_ratio_ - 1,
-        expectancy=(avg_win_ * total_won_ / total_closed_) + (avg_loss_ * total_lost_ / total_closed_)
+        expectancy=divide(avg_win_ * total_won_, total_closed_) + divide(avg_loss_ * total_lost_, total_closed_),
+        winning_pct=winning_pct,
+        avg_win_pct=avg_win_pct,
+        avg_loss_pct=avg_loss_pct,
+        biggest_win_pct=biggest_win_pct,
+        biggest_loss_pct=biggest_loss_pct,
     )
     csv_columns = results.keys()
 

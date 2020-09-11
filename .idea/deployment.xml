@@ -2,14 +2,21 @@
 <project version="4">
   <component name="PublishConfigData">
     <serverData>
-      <paths name="eportal">
+      <paths name="ep_root">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
-      <paths name="eproject@220.158.200.19:55000">
+      <paths name="ep_vh_python">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="eproject jupyter">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />

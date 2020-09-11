@@ -2,97 +2,90 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import importlib
+from pathlib import Path
+from pprint import pprint
+
 import matplotlib
+
+from bt_args import parse_args
 
 matplotlib.use('TkAgg')
 
-import argparse
 import datetime
 import random
 
 import backtrader as bt
 import matplotlib.pyplot as plt
 
-from helpers_functions import print_dict, save_trade_analysis, save_analyzers, save_analyzers_excel
-from oanda_functions import get_historical_data_factory
+from helpers_functions import print_dict, save_trade_analysis, save_analyzers
+from providers.forex.oanda_functions import get_historical_data_factory
+from providers.cryto.binance_functions import get_historical_data, binance_client, get_symbol_info
+import analyzers
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Customized Strategy')
-
-    parser.add_argument('--from_date', '-f',
-                        default='2017-01-01',
-                        help='Starting date in YYYY-MM-DD format')
-
-    parser.add_argument('--to_date', '-t',
-                        default='2017-12-31',
-                        help='Starting date in YYYY-MM-DD format')
-
-    parser.add_argument('--granularity', default='H4', type=str,
-                        help='Granularity of data')
-
-    parser.add_argument('--only_long', '-ol', default=True, action='store_true',
-                        help='Do only long operations')
-
-    parser.add_argument('--write_csv', '-wcsv', default=True, action='store_true',
-                        help='Tell the writer to produce a csv stream')
-
-    parser.add_argument('--show_plot', '-sp', default=True, action='store_true',
-                        help='show plot')
-
-    parser.add_argument('--same_account', '-da', default=False, action='store_false',
-                        help='Use the same account for all instrument. Otherwise different account for each instrument')
-
-    parser.add_argument('--cash', default=100_000, type=int,
-                        help='Starting Cash')
-
-    parser.add_argument('--leverage', default=50, type=int,
-                        help='Leverage')
-
-    # Set the commission - 0.1% ... divide by 100 to remove the % ... 0.001
-    # forex, set to zero
-    parser.add_argument('--commission', default=0.00, type=float,
-                        help='Commission for operation')
-
-    # parser.add_argument('--mult', default=10, type=int,
-    #                     help='Multiplier for futures')
-    #
-    # parser.add_argument('--margin', default=2000.0, type=float,
-    #                     help='Margin for each future')
-    #
-    # parser.add_argument('--stake', default=1, type=int,
-    #                     help='Stake to apply in each operation')
-    #
-    # parser.add_argument('--plot', '-p', action='store_true',
-    #                     help='Plot the read data')
-    #
-    # parser.add_argument('--numfigs', '-n', default=1,
-    #                     help='Plot using numfigs figures')
-
-    return parser.parse_args(args=[])
+def forex_data(instrument, start_str, end_str):
+    # forex method 2 (instrument factory)
+    params = {
+        "from": f"{start_str}T00:00:00Z",
+        "granularity": args.granularity,
+        "to": f"{end_str}T00:00:00Z"
+    }
+    return get_historical_data_factory(instrument, params)
 
 
-def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=False):
-    if instrument_list is None:
-        instrument_list = ["AUD_USD"]
+def crypto_data(instrument, start_str, end_str=None, interval='4h'):
+    # binance
+    params = dict(interval=interval, start_str=start_str, end_str=end_str)
+    # params = dict(interval='4h', start_str='1 year ago UTC', end_str=end_str)
+    return get_historical_data(instrument, params)
+
+
+def save_plots(cerebro, numfigs=1, iplot=True, start=None, end=None,
+               width=16, height=9, dpi=300, tight=True, use=None, file_path='', show=False, **kwargs):
+    from backtrader import plot
+    # if cerebro.p.oldsync:
+    #     plotter = plot.Plot_OldSync(**kwargs)
+    # else:
+    #     plotter = plot.Plot(**kwargs)
+    plotter = plot.Plot(**kwargs)
+
+    figs = []
+    for stratlist in cerebro.runstrats:
+        for si, strat in enumerate(stratlist):
+            rfig = plotter.plot(strat, figid=si * 100,
+                                numfigs=numfigs, iplot=iplot,
+                                start=start, end=end, use=use)
+            figs.append(rfig)
+
+    for fig in figs:
+        for f in fig:
+            f.set_size_inches(width, height)
+            f.savefig(file_path, bbox_inches='tight')
+            if show:
+                plt.show()
+    return figs
+
+
+# saveplots(cerebro, file_path='savefig.png')  # run it
+
+def start_backtest(strategy, instrument_list, session_id=None, show_plot=False, output_path=None):
     if session_id is None:
         session_id = ''.join([str(random.randint(0, 9)) for _ in range(4)])
     timestamp = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%H%M%S')
 
-    # parse arguments
     args = parse_args()
+    if output_path is None:
+        output_path = 'output'
+    if not Path(output_path).is_dir():
+        Path(output_path).mkdir(parents=True, exist_ok=True)
 
     # Create a cerebro entity
     cerebro = bt.Cerebro()
     if args.write_csv:
-        cerebro.addwriter(bt.WriterFile, out=f'output/backtest_{timestamp}.csv', csv=True, rounding=2)
-
-    # oanda method 2 (instrument factory)
-    params = {
-        "from": f"{args.from_date}T00:00:00Z",
-        "granularity": args.granularity,
-        "to": f"{args.to_date}T00:00:00Z"
-    }
+        filename = f'{output_path}/backtest_{timestamp}.csv' if len(
+            instrument_list) > 1 else f'{output_path}/backtest_{timestamp}_{instrument_list[0]}.csv'
+        # filename = f'{output_path}/backtest_{timestamp}_{instrument_list[0]}.csv'
+        cerebro.addwriter(bt.WriterFile, out=filename, csv=True, rounding=2)
 
     # crypto compare BTC USD
     # from_date = cc.to_seconds_epochjlab(datetime.datetime(2016, 1, 1))
@@ -100,10 +93,34 @@ def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=Fa
     # df = cc.get_df(from_date, to_date, time_period='histoday', coin='ETH', data_folder='data')
 
     data = []
-    for i, instrument in enumerate(instrument_list):
-        df = get_historical_data_factory(instrument, params)
-        data.append(bt.feeds.PandasData(dataname=df, timeframe=bt.TimeFrame.Minutes, compression=240))
-        cerebro.adddata(data[i], name=instrument)
+    granularity = args.granularity
+    interval = granularity[::-1].lower()
+    if granularity == 'H1':
+        compression = 60
+    if granularity == 'H4':
+        compression = 60 * 4
+
+    shorlisted_instruments = []
+    i = 0
+    for instrument in instrument_list:
+        # check if tradeable first
+        symbol_info = get_symbol_info(instrument)
+        if symbol_info.get('status') != 'TRADING' or \
+                not symbol_info.get('isSpotTradingAllowed'):
+            continue
+
+        # df = forex_data(instrument, args.start_date, args.end_date)
+        try:
+            df = crypto_data(instrument, args.from_date, args.to_date, interval=interval)
+        except Exception as e:
+            print(instrument, e)
+            continue
+        df.dropna(inplace=True)
+        if not df.empty:
+            shorlisted_instruments.append(instrument)
+            data.append(bt.feeds.PandasData(dataname=df, timeframe=bt.TimeFrame.Minutes, compression=compression))
+            cerebro.adddata(data[i], name=instrument)
+            i += 1
 
     # Set our desired cash start
     cerebro.broker.setcash(args.cash)
@@ -113,62 +130,41 @@ def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=Fa
     cerebro.addstrategy(strategy, only_long=args.only_long)
 
     cerebro.broker.setcommission(commission=args.commission, leverage=args.leverage)
-    # cerebro.broker.setcommission(commission=0, leverage=args.leverage)
 
-    # Add a FixedSize sizer according to the stake
-    # cerebro.addsizer(bt.sizers.FixedSize, stake=10)
-
-    # Print out the starting conditions
-    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+    starting_value = cerebro.broker.getvalue()
+    print('Starting Portfolio Value: %.2f' % starting_value)
 
     # Add the analyzers we are interested in
     cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="ta")
     cerebro.addanalyzer(bt.analyzers.SQN, _name="sqn")
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe")
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="draw_down")
-    cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
+    cerebro.addanalyzer(bt.analyzers.Returns, _name="returns")
+    cerebro.addanalyzer(analyzers.TradeReturn, _name="trade_return")
 
     # Run over everything
     strategies = cerebro.run()
     first_strategy = strategies[0]
 
-    # print the analyzers
     for analyzer in first_strategy.analyzers:
-        if type(analyzer).__name__ != 'PyFolio':
-            analyzer.print()
+        analyzer.print()
 
-    #
-    # first_strategy.analyzers.ta.get_analysis()
-    save_trade_analysis(first_strategy.analyzers.ta.get_analysis(), instrument_list,
-                        f'output/analysis_{strategy.__module__}_{session_id}.csv')
+    save_trade_analysis(
+        first_strategy.analyzers,
+        shorlisted_instruments,
+        f'{output_path}/analysis_{strategy.__module__}_{session_id}.csv',
+        starting_value
+    )
 
-    save_analyzers(first_strategy, instrument, f'output/analyzers_result_{strategy.__module__}_{session_id}.csv')
+    current_instrument = shorlisted_instruments[0] if len(shorlisted_instruments) == 1 else 'multiple_instruments'
 
-    # save_analyzers_excel(first_strategy, instrument, f'output/analyzers_result_{strategy.__module__}_{session_id}.xlsx')
+    save_analyzers(first_strategy, current_instrument,
+                   f'{output_path}/analyzers_result_{strategy.__module__}_{session_id}.csv')
 
     print_dict(first_strategy.analyzers.draw_down.get_analysis())
-
-    # try:
-
-    #     print_trade_analysis(first_strategy.analyzers.ta.get_analysis())
-    #     save_trade_analysis(first_strategy.analyzers.ta.get_analysis(), instrument,
-    #                         f'output/analysis_{strategy.__module__}_{session_id}.csv')
-
-    #     print_sharpe_ratio(first_strategy.analyzers.sharpe.get_analysis())
-    #     print_sqn(first_strategy.analyzers.sqn.get_analysis())
-    #     print_dict(first_strategy.analyzers.draw_down.get_analysis())
-
-    # except Exception as e:
-    #     print(e)
-
-    # Get final portfolio Value
     portfolio_value = cerebro.broker.getvalue()
-
-    # Print out the final result
     print(f'Final Portfolio Value: ${portfolio_value:.2f}')
-    # print('Final Portfolio Value: ${0:.2f}'.format(portvalue))
 
-    # plt.style.use('seaborn-notebook')
     plt.style.use('tableau-colorblind10')
     plt.rc('grid', color='k', linestyle='-', alpha=0.1)
     plt.rc('legend', loc='best')
@@ -185,47 +181,66 @@ def start_backtest(strategy, instrument_list=None, session_id=None, show_plot=Fa
                      fmt_x_data='%Y-%b-%d %H:%M',
                      subplot=True,
                      dpi=900,
-                     numfigs=1,
+                     # numfigs=1,
                      # plotymargin=10.0,
                      iplot=False)
 
     # save_plots(figs, instrument, strategy, timestamp)
 
     #  separate plot by data feed. (if there is more than one i.e. multiple data feeds)
-    if show_plot:
-        if len(first_strategy.datas) > 1:
-            for i in range(len(first_strategy.datas)):
-                for j, d in enumerate(first_strategy.datas):
-                    d.plotinfo.plot = i == j  # only one data feed to be plot. others = False
-                    # first_strategy.observers.buysell[j].plotinfo.plot = i == j
+    if len(first_strategy.datas) > 1:
+        for i in range(len(first_strategy.datas)):
+            for j, d in enumerate(first_strategy.datas):
+                d.plotinfo.plot = i == j
+                # only one data feed to be plot. others = False
                 # cerebro.plot(**plot_args)
-                figure = cerebro.plot(**plot_args)[0][0]
-                figure.savefig(f'output/{strategy.__module__}_{session_id}.png', dpi=300, figsize=(10, 5))
-        else:
-            # cerebro.plot(**plot_args)
-            figure = cerebro.plot(**plot_args)[0][0]
-            figure.savefig(f'output/{strategy.__module__}_{session_id}.png', dpi=300, figsize=(10, 5))
+            if show_plot:
+                figure = cerebro.plot(**plot_args)
+    else:
+        # cerebro.plot(**plot_args)
+        asset_name = first_strategy.data0._name
+        file_plot = f'{output_path}/{strategy.__module__}_{session_id}_{asset_name}.png'
+        save_plots(cerebro, file_path=file_plot, dpi=600, show=show_plot)  # run it
 
 
 if __name__ == '__main__':
+    # 😏
 
     # parse arguments
     args = parse_args()
     # get_instruments()
     session_id = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%H%M%S')
-    instruments = ['EUR_USD', 'GBP_USD', 'AUD_USD', 'NZD_USD', 'XAU_USD', 'XAG_USD']
-    # instruments = ['EUR_USD', 'GBP_USD']
-
-    strategy_module_name = 'candles2'
-    strategy_module = importlib.import_module(strategy_module_name)
+    all_tickers = binance_client.get_all_tickers()
+    instruments = [ticker.get('symbol') for ticker in all_tickers if ticker.get('symbol').endswith('USDT')]
+    # instruments = random.sample(instruments, 15)
+    print(instruments)
+    # instruments = ['BTCUSDT', 'ETHUSDT']
+    strategy_module = importlib.import_module(args.strategy_name)
 
     same_account = args.same_account
-    # same_account = False
+    show_plot = args.show_plot
+    timestamp = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%H%M%S')
+    output_path = f'output/{args.strategy_name}_{timestamp}'
 
     if same_account:
         # run all instruments at the same time with the same account
-        start_backtest(strategy_module.MyStrategy, instruments, show_plot=True)
+        start_backtest(strategy_module.MyStrategy, instruments, show_plot=show_plot, output_path=output_path)
     else:
         # run each instrument independently starting with a new account each
         for instrument in instruments:
-            start_backtest(strategy_module.MyStrategy, [instrument], session_id=session_id, show_plot=True)
+            try:
+                start_backtest(strategy_module.MyStrategy,
+                               [instrument],
+                               session_id=session_id,
+                               show_plot=show_plot,
+                               output_path=output_path)
+            except Exception as e:
+                print(instrument)
+                print(e)
+
+    print('======== Completed ========')
+    print('from date', args.from_date)
+    print('to date', args.to_date)
+    print('time period', args.granularity)
+    print('List of instruments:')
+    pprint(instruments)

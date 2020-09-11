@@ -1,3 +1,5 @@
-keys.py
+config/keys.py
 main_flipped.py
-strategies/candles_flipped.py
+strategies_bt/candles_flipped.py
+/sandbox/
+/config/
